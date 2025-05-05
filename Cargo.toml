@@ -1,0 +1,10 @@
+[package]
+name = "flightstick-nurbs"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.98"
+bsfun = { git = "https://github.com/dorianprill/bsfun.git", version = "0.1.0" }
+evdev = "0.13.1"
+evdev-rs = "0.6.1"
