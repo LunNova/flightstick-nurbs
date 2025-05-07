@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, bail};
+use color_eyre::eyre::{Context, Result, bail};
 use evdev_rs::{
 	Device, DeviceWrapper, GrabMode, InputEvent, ReadFlag, ReadStatus, UInputDevice,
 	enums::{EV_ABS, EventCode, EventType},
@@ -360,6 +360,8 @@ impl ThreadRemapper {
 }
 
 fn main() -> Result<()> {
+	color_eyre::install()?;
+
 	let devices = DeviceInfo::obtain_device_list()?;
 	eprintln!("Devices: {:#?}", devices);
 	let device = DeviceInfo::with_name("Thrustmaster Solaris Base", None, Some((1103, 1058, 273)))?;
