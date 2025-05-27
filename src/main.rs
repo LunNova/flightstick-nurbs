@@ -202,7 +202,7 @@ impl InputMapper {
 		let mut input = Device::new_from_file(f)
 			.with_context(|| format!("failed to create new Device from file {}", path.display()))?;
 
-		input.set_name(&format!("evremap Virtual input for {}", path.display()));
+		input.set_name(&format!("Curved {}", path.display()));
 
 		let output = UInputDevice::create_from_device(&input)
 			.context(format!("creating UInputDevice from {}", path.display()))?;
@@ -366,6 +366,33 @@ fn main() -> Result<()> {
 	eprintln!("Devices: {:#?}", devices);
 	let device = DeviceInfo::with_name("Thrustmaster Solaris Base", None, Some((1103, 1058, 273)))?;
 	eprintln!("Device: {:#?}", device);
+
+	// Make the source device inaccessible to other users
+	use std::os::unix::fs::PermissionsExt;
+	let metadata = std::fs::metadata(&device.path)
+		.with_context(|| format!("Failed to get metadata for {}", device.path.display()))?;
+	let mut perms = metadata.permissions();
+	perms.set_mode(0o600); // Owner read/write only
+	std::fs::set_permissions(&device.path, perms)
+		.with_context(|| format!("Failed to set permissions on {}", device.path.display()))?;
+
+	// Remove any ACLs if the platform supports it
+	#[cfg(target_os = "linux")]
+	{
+		use std::process::Command;
+		// Using setfacl command to remove all ACLs
+		let output = Command::new("setfacl")
+			.args(["-b", device.path.to_str().unwrap_or("")])
+			.output()
+			.with_context(|| "Failed to execute setfacl command")?;
+
+		if !output.status.success() {
+			eprintln!(
+				"Warning: Failed to remove ACLs: {}",
+				String::from_utf8_lossy(&output.stderr)
+			);
+		}
+	}
 
 	// FIXME: config to select device based on name or VID/PID etc
 	let mut remapper = FlightstickCurveApp::new(device.path);
