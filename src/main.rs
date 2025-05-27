@@ -255,34 +255,61 @@ impl FlightstickCurveApp {
 		self.state = RemapperState::Running;
 		let running = Arc::clone(&self.running);
 
-		// Clone axis configs for the thread
+		// Clone axis configs and source path for the thread
 		let axis_configs = self.axis_configs.clone();
+		let source_path = self.source_path.clone();
 
 		thread::spawn(move || {
 			// Create a remapper for the thread
 			let thread_remapper = ThreadRemapper { axis_configs };
+			let mut current_device = Some(virtual_device);
 
 			while running.load(Ordering::SeqCst) {
-				// Read events with timeout
-				if let Ok((status, event)) = virtual_device
-					.input
-					.next_event(ReadFlag::NORMAL | ReadFlag::BLOCKING)
-				{
-					match status {
-						ReadStatus::Success => {
-							if let Some(modified_event) = thread_remapper.process_event(event) {
-								eprintln!("Modified event: {:?}", modified_event);
-								if let Err(e) = virtual_device.output.write_event(&modified_event) {
-									eprintln!("Error writing event: {}", e);
+				if let Some(ref mut device) = current_device {
+					// Try to read events
+					match device
+						.input
+						.next_event(ReadFlag::NORMAL | ReadFlag::BLOCKING)
+					{
+						Ok((status, event)) => match status {
+							ReadStatus::Success => {
+								if let Some(modified_event) = thread_remapper.process_event(event) {
+									eprintln!("Modified event: {:?}", modified_event);
+									if let Err(e) = device.output.write_event(&modified_event) {
+										eprintln!("Error writing event: {}", e);
+									}
 								}
 							}
+							ReadStatus::Sync => todo!(),
+						},
+						Err(e) => {
+							eprintln!("Device disconnected: {}", e);
+							// Ungrab before dropping the device
+							let _ = device.input.grab(GrabMode::Ungrab);
+							current_device = None;
 						}
-						ReadStatus::Sync => todo!(),
+					}
+				} else {
+					// Device is disconnected, try to reconnect
+					eprintln!("Attempting to reconnect to device...");
+					match InputMapper::create_mapper(&source_path) {
+						Ok(new_device) => {
+							eprintln!("Device reconnected successfully");
+							current_device = Some(new_device);
+						}
+						Err(e) => {
+							eprintln!("Failed to reconnect: {}", e);
+							thread::sleep(Duration::from_secs(1));
+						}
 					}
 				}
 				thread::sleep(Duration::from_micros(100));
 			}
-			virtual_device.input.grab(GrabMode::Ungrab).unwrap();
+
+			// Clean up on exit
+			if let Some(ref mut device) = current_device {
+				let _ = device.input.grab(GrabMode::Ungrab);
+			}
 		});
 
 		Ok(())
